@@ -1,160 +1,157 @@
 ```yaml
-# Docker Compose file for the Multi-vendor E-commerce Marketplace
-# Version: 3.8
+# docker-compose.yml
 #
-# This file defines the services, networks, and volumes for the entire application stack.
-# It is designed for both development and can be adapted for production.
+# This file defines the services, networks, and volumes for the multi-vendor
+# e-commerce marketplace application. It is designed for both local development
+# and can be adapted for production deployments.
 #
 # To run:
-# 1. Create a .env file in the root directory with database credentials.
-# 2. Run `docker-compose up --build`
-
+#   docker-compose up --build -d
+#
+# To stop:
+#   docker-compose down
+#
 version: '3.8'
 
 services:
   # --------------------------------------------------------------------------
-  # NGINX Reverse Proxy & Web Server
+  # API Server (Node.js Backend)
   # --------------------------------------------------------------------------
-  # Acts as the single entry point for the application.
-  # - Serves the React frontend's static build in production.
-  # - Forwards API requests (`/api/*`) to the Node.js backend.
-  # - Forwards admin panel requests (`/admin/*`) to the PHP service.
-  # - Can be configured to handle SSL termination.
-  nginx:
-    image: nginx:1.25-alpine
-    container_name: marketplace_nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443" # For future SSL implementation
-    volumes:
-      # Mount the Nginx configuration. A sample config should be created.
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      # Mount the React client's build output to be served directly.
-      # This assumes you run `npm run build` in the client directory first.
-      - ./client/build:/var/www/html/client
-      # Mount SSL certificates for production (optional).
-      # - ./nginx/certs:/etc/nginx/certs:ro
-    depends_on:
-      - server
-      - admin
-    networks:
-      - ecommerce-net
-
-  # --------------------------------------------------------------------------
-  # Node.js Backend API Service
-  # --------------------------------------------------------------------------
-  # The core REST API for the marketplace, handling business logic.
-  server:
+  # Handles business logic, data processing, and serves the REST API.
+  api:
+    container_name: marketplace_api
     build:
       context: ./server
-      dockerfile: Dockerfile # Assumes a Dockerfile exists in the ./server directory
-    container_name: marketplace_server
+      dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - ./server/.env # Load environment variables from the server's .env file
+      - ./server/.env
+    ports:
+      - "5000:5000"
     volumes:
-      # Mount the source code for live-reloading during development.
-      # For production, you would typically copy the code in the Dockerfile and not mount a volume.
+      # Mounts the host's server directory into the container for live code changes.
+      # For production, you would typically remove this volume and rely on the
+      # code copied during the image build.
       - ./server:/usr/src/app
-      # Exclude node_modules from being overwritten by the host mount.
+      # Use an anonymous volume to prevent the host's node_modules from overwriting
+      # the container's, which might have different dependencies.
       - /usr/src/app/node_modules
     depends_on:
       db:
-        condition: service_healthy # Wait for the database to be ready before starting
+        condition: service_healthy
     networks:
-      - ecommerce-net
-    # The port is not exposed to the host, only to the internal network for Nginx.
+      - app-network
 
   # --------------------------------------------------------------------------
-  # React Frontend Client Service (for Development)
+  # Client (React Frontend)
   # --------------------------------------------------------------------------
-  # The customer-facing web application.
-  # NOTE: This service is primarily for development with hot-reloading.
-  # For a production-like setup, Nginx serves the static build directly (see nginx service).
-  # You can comment this out if you only want to run the production build.
+  # The customer-facing web application built with React.
+  # This service runs the React development server for features like hot-reloading.
   client:
+    container_name: marketplace_client
     build:
       context: ./client
-      dockerfile: Dockerfile.dev # Assumes a Dockerfile.dev for development
-    container_name: marketplace_client
-    volumes:
-      - ./client:/app
-      - /app/node_modules
-    environment:
-      - NODE_ENV=development
-      # CHOKIDAR_USEPOLLING is often needed for hot-reloading to work correctly inside Docker.
-      - CHOKIDAR_USEPOLLING=true
+      dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
-      # Expose port 3000 for direct access to the dev server.
       - "3000:3000"
+    volumes:
+      # Mounts the host's client directory for live code changes.
+      - ./client:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      # Necessary for hot-reloading to work correctly inside a Docker container.
+      - CHOKIDAR_USEPOLLING=true
+      # Prevents a known issue with Webpack Dev Server and proxies.
+      - WDS_SOCKET_PORT=0
+    stdin_open: true # For interactive mode in development
+    tty: true
     networks:
-      - ecommerce-net
+      - app-network
 
   # --------------------------------------------------------------------------
-  # PHP Admin Panel Service
+  # Admin Panel (PHP Application)
   # --------------------------------------------------------------------------
-  # The admin interface for managing the platform.
-  # Uses the official php:apache image for simplicity, which bundles PHP and Apache.
-  admin:
+  # A dedicated PHP-FPM service to process PHP code for the admin panel.
+  # It does not expose any ports directly; Nginx will forward requests to it.
+  admin-php:
+    container_name: marketplace_admin_php
     build:
       context: ./admin-panel
-      dockerfile: Dockerfile # Assumes a Dockerfile to install required PHP extensions (e.g., pdo_pgsql)
-    container_name: marketplace_admin
+      dockerfile: Dockerfile # This Dockerfile should be based on a php-fpm image
     restart: unless-stopped
     volumes:
-      # Mount the PHP source code.
+      # Mounts the admin panel source code.
       - ./admin-panel:/var/www/html
     depends_on:
       db:
         condition: service_healthy
     networks:
-      - ecommerce-net
-    # The port is not exposed to the host, only to the internal network for Nginx.
+      - app-network
 
   # --------------------------------------------------------------------------
-  # PostgreSQL Database Service
+  # Web Server (Nginx)
   # --------------------------------------------------------------------------
-  # The primary relational database for the entire application.
+  # Acts as a reverse proxy, directing traffic to the appropriate service.
+  # - Requests to `/api/*` are forwarded to the Node.js API server.
+  # - Requests for the admin panel are passed to the PHP-FPM service.
+  # - All other requests are proxied to the React development server.
+  # In a production setup, Nginx would also serve the static build of the React app.
+  nginx:
+    container_name: marketplace_nginx
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      # Mounts the custom Nginx configuration.
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      # Nginx needs access to the PHP files to pass them to PHP-FPM.
+      - ./admin-panel:/var/www/html
+    depends_on:
+      - api
+      - client
+      - admin-php
+    networks:
+      - app-network
+
+  # --------------------------------------------------------------------------
+  # Database (PostgreSQL)
+  # --------------------------------------------------------------------------
+  # The primary database for the application.
   db:
-    image: postgres:15-alpine
     container_name: marketplace_db
+    image: postgres:14-alpine
     restart: unless-stopped
     environment:
-      # These variables are sourced from the .env file in the project root.
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER:-user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: ${DB_NAME:-marketplace}
     volumes:
-      # Persist database data on the host machine using a named volume.
-      - pgdata:/var/lib/postgresql/data
+      # Persists database data across container restarts.
+      - postgres_data:/var/lib/postgresql/data
     ports:
-      # Expose the port to the host for direct database access with a client like DBeaver or pgAdmin.
+      # Exposes the database port to the host machine for direct access if needed.
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-user} -d ${DB_NAME:-marketplace}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
     networks:
-      - ecommerce-net
+      - app-network
 
 # --------------------------------------------------------------------------
-# Networks
+# Networks and Volumes
 # --------------------------------------------------------------------------
-# Define a custom bridge network for our services to communicate securely
-# by their service names.
+# Defines the shared network for inter-service communication and the
+# named volume for database persistence.
+
 networks:
-  ecommerce-net:
+  app-network:
     driver: bridge
 
-# --------------------------------------------------------------------------
-# Volumes
-# --------------------------------------------------------------------------
-# Define a named volume for persisting database data. This ensures data is
-# not lost when the `db` container is removed or recreated.
 volumes:
-  pgdata:
+  postgres_data:
     driver: local
 ```
