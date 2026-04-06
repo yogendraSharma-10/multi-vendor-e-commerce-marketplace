@@ -1,0 +1,160 @@
+```yaml
+# Docker Compose file for the Multi-vendor E-commerce Marketplace
+# Version: 3.8
+#
+# This file defines the services, networks, and volumes for the entire application stack.
+# It is designed for both development and can be adapted for production.
+#
+# To run:
+# 1. Create a .env file in the root directory with database credentials.
+# 2. Run `docker-compose up --build`
+
+version: '3.8'
+
+services:
+  # --------------------------------------------------------------------------
+  # NGINX Reverse Proxy & Web Server
+  # --------------------------------------------------------------------------
+  # Acts as the single entry point for the application.
+  # - Serves the React frontend's static build in production.
+  # - Forwards API requests (`/api/*`) to the Node.js backend.
+  # - Forwards admin panel requests (`/admin/*`) to the PHP service.
+  # - Can be configured to handle SSL termination.
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: marketplace_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443" # For future SSL implementation
+    volumes:
+      # Mount the Nginx configuration. A sample config should be created.
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Mount the React client's build output to be served directly.
+      # This assumes you run `npm run build` in the client directory first.
+      - ./client/build:/var/www/html/client
+      # Mount SSL certificates for production (optional).
+      # - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - server
+      - admin
+    networks:
+      - ecommerce-net
+
+  # --------------------------------------------------------------------------
+  # Node.js Backend API Service
+  # --------------------------------------------------------------------------
+  # The core REST API for the marketplace, handling business logic.
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile # Assumes a Dockerfile exists in the ./server directory
+    container_name: marketplace_server
+    restart: unless-stopped
+    env_file:
+      - ./server/.env # Load environment variables from the server's .env file
+    volumes:
+      # Mount the source code for live-reloading during development.
+      # For production, you would typically copy the code in the Dockerfile and not mount a volume.
+      - ./server:/usr/src/app
+      # Exclude node_modules from being overwritten by the host mount.
+      - /usr/src/app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy # Wait for the database to be ready before starting
+    networks:
+      - ecommerce-net
+    # The port is not exposed to the host, only to the internal network for Nginx.
+
+  # --------------------------------------------------------------------------
+  # React Frontend Client Service (for Development)
+  # --------------------------------------------------------------------------
+  # The customer-facing web application.
+  # NOTE: This service is primarily for development with hot-reloading.
+  # For a production-like setup, Nginx serves the static build directly (see nginx service).
+  # You can comment this out if you only want to run the production build.
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev # Assumes a Dockerfile.dev for development
+    container_name: marketplace_client
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      # CHOKIDAR_USEPOLLING is often needed for hot-reloading to work correctly inside Docker.
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      # Expose port 3000 for direct access to the dev server.
+      - "3000:3000"
+    networks:
+      - ecommerce-net
+
+  # --------------------------------------------------------------------------
+  # PHP Admin Panel Service
+  # --------------------------------------------------------------------------
+  # The admin interface for managing the platform.
+  # Uses the official php:apache image for simplicity, which bundles PHP and Apache.
+  admin:
+    build:
+      context: ./admin-panel
+      dockerfile: Dockerfile # Assumes a Dockerfile to install required PHP extensions (e.g., pdo_pgsql)
+    container_name: marketplace_admin
+    restart: unless-stopped
+    volumes:
+      # Mount the PHP source code.
+      - ./admin-panel:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ecommerce-net
+    # The port is not exposed to the host, only to the internal network for Nginx.
+
+  # --------------------------------------------------------------------------
+  # PostgreSQL Database Service
+  # --------------------------------------------------------------------------
+  # The primary relational database for the entire application.
+  db:
+    image: postgres:15-alpine
+    container_name: marketplace_db
+    restart: unless-stopped
+    environment:
+      # These variables are sourced from the .env file in the project root.
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      # Persist database data on the host machine using a named volume.
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Expose the port to the host for direct database access with a client like DBeaver or pgAdmin.
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ecommerce-net
+
+# --------------------------------------------------------------------------
+# Networks
+# --------------------------------------------------------------------------
+# Define a custom bridge network for our services to communicate securely
+# by their service names.
+networks:
+  ecommerce-net:
+    driver: bridge
+
+# --------------------------------------------------------------------------
+# Volumes
+# --------------------------------------------------------------------------
+# Define a named volume for persisting database data. This ensures data is
+# not lost when the `db` container is removed or recreated.
+volumes:
+  pgdata:
+    driver: local
+```
