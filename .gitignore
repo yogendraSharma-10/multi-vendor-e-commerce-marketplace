@@ -1,0 +1,130 @@
+# ===================================================================
+# General / Global
+# For artifacts that can appear in any directory.
+# ===================================================================
+
+# Environment variables
+# Never commit sensitive environment variables.
+# Use .env.example as a template.
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Local environment files for Create React App
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Log files
+*.log
+logs
+*.log.*
+
+# IDE and editor directories
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.settings/
+.classpath
+
+# OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# ===================================================================
+# Node.js / npm / yarn (Root, /server, /client)
+# ===================================================================
+
+# Dependency directories
+# These are managed by package managers and should be installed, not committed.
+node_modules/
+
+# Build output / Compiled files
+dist/
+build/
+.next/
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Report files for testing and coverage
+report.json
+*.report.json
+coverage/
+.nyc_output/
+
+# Optional local modules for Yarn PnP
+.pnp/
+.pnp.js
+
+# ===================================================================
+# React (specifically for /client)
+# ===================================================================
+# The client/build directory is the production build of the React app.
+# It's generated during the build process and should not be in version control.
+client/build/
+
+# ===================================================================
+# PHP / Composer (specifically for /admin-panel)
+# ===================================================================
+
+# Composer dependencies directory
+vendor/
+admin-panel/vendor/
+
+# Composer phar
+composer.phar
+
+# PHPUnit cache
+.phpunit.result.cache
+admin-panel/.phpunit.result.cache
+
+# Local configuration files that might be created by frameworks
+# (Good practice even for simpler setups)
+admin-panel/config/local.php
+
+# ===================================================================
+# Docker
+# ===================================================================
+
+# Ignore local overrides for docker-compose
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Ignore files and directories created by Docker that are not needed in git
+.docker/
+.dockerignore
+
+# ===================================================================
+# Miscellaneous
+# ===================================================================
+
+# Compressed files
+*.zip
+*.tar
+*.gz
+*.rar
+
+# Compiled binary files
+*.o
+*.so
+*.dll
+*.exe
