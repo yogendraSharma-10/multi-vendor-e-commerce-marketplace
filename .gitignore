@@ -1,130 +1,121 @@
-# ===================================================================
-# General / Global
-# For artifacts that can appear in any directory.
-# ===================================================================
+# =============================================================================
+# General & System Files
+# =============================================================================
+
+# Operating System Files
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+__MACOSX
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# IDE and Editor Configuration
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+.history/
+
+# =============================================================================
+# Project-Specific
+# =============================================================================
 
 # Environment variables
-# Never commit sensitive environment variables.
-# Use .env.example as a template.
+# Use .env.example as a template for your local environment variables.
+# Never commit secrets or credentials.
 .env
 .env.*
 !.env.example
 !.env.test
 
-# Local environment files for Create React App
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
 # Log files
+logs/
 *.log
-logs
 *.log.*
-
-# IDE and editor directories
-.idea/
-.vscode/
-*.sublime-project
-*.sublime-workspace
-.project
-.settings/
-.classpath
-
-# OS-generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
 
 # Temporary files
 *.tmp
+*.temp
 *.swp
-*~
 
-# ===================================================================
-# Node.js / npm / yarn (Root, /server, /client)
-# ===================================================================
+# =============================================================================
+# Node.js / JavaScript (for /server and /client)
+# =============================================================================
 
 # Dependency directories
-# These are managed by package managers and should be installed, not committed.
+# These are installed via `npm install` or `yarn install`
 node_modules/
 
-# Build output / Compiled files
-dist/
-build/
-.next/
-out/
-
-# Logs
+# Debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Report files for testing and coverage
-report.json
-*.report.json
+# Test and coverage reports
 coverage/
 .nyc_output/
 
-# Optional local modules for Yarn PnP
-.pnp/
-.pnp.js
+# Lock files - It's generally best practice to commit these for consistent builds.
+# Uncomment if your project policy is to not commit them.
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
 
-# ===================================================================
-# React (specifically for /client)
-# ===================================================================
-# The client/build directory is the production build of the React app.
-# It's generated during the build process and should not be in version control.
+# =============================================================================
+# React Client (/client)
+# =============================================================================
+
+# Build output directory for the React app
 client/build/
 
-# ===================================================================
-# PHP / Composer (specifically for /admin-panel)
-# ===================================================================
+# =============================================================================
+# Node.js Server (/server)
+# =============================================================================
+
+# Build output directory if using a transpiler like TypeScript or Babel
+server/dist/
+server/build/
+
+# =============================================================================
+# PHP / Composer (/admin-panel)
+# =============================================================================
 
 # Composer dependencies directory
-vendor/
 admin-panel/vendor/
 
-# Composer phar
+# Composer executable downloaded locally
 composer.phar
 
-# PHPUnit cache
-.phpunit.result.cache
-admin-panel/.phpunit.result.cache
+# Local configuration files that may contain sensitive data
+admin-panel/config.local.php
 
-# Local configuration files that might be created by frameworks
-# (Good practice even for simpler setups)
-admin-panel/config/local.php
-
-# ===================================================================
+# =============================================================================
 # Docker
-# ===================================================================
+# =============================================================================
 
-# Ignore local overrides for docker-compose
+# Ignore local docker-compose override files
 docker-compose.override.yml
-docker-compose.local.yml
+docker-compose.override.yaml
 
-# Ignore files and directories created by Docker that are not needed in git
-.docker/
-.dockerignore
-
-# ===================================================================
-# Miscellaneous
-# ===================================================================
-
-# Compressed files
-*.zip
-*.tar
-*.gz
-*.rar
-
-# Compiled binary files
-*.o
-*.so
-*.dll
-*.exe
+# Ignore local data volumes if mounted in the project root
+# (Adjust path if necessary)
+# db-data/
+# cache-data/
