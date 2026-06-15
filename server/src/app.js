@@ -1,158 +1,149 @@
 ```javascript
 /**
  * Main application file for the Node.js server.
- * This file initializes the Express application, sets up middleware,
- * connects to the database, defines API routes, and starts the server.
+ * This file configures the Express application, sets up middleware,
+ * connects to the database, and defines the API routes.
  *
- * @file server/src/app.js
+ * @project Multi-vendor E-commerce Marketplace
  * @author Senior Developer
  */
 
-// Load environment variables from a .env file into process.env
-require('dotenv').config();
-
+// --- Core Node.js and Third-Party Modules ---
 const express = require('express');
+const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
-const mongoose = require('mongoose');
+const morgan = 'morgan';
+const rateLimit = require('express-rate-limit');
+const hpp = require('hpp');
+const xss = require('xss-clean');
 const path = require('path');
+const cookieParser = require('cookie-parser');
 
-// --- Import Middleware ---
-const { errorHandler } = require('./middleware/errorHandler');
-const { notFoundHandler } = require('./middleware/notFoundHandler');
-const rateLimiter = require('./middleware/rateLimiter');
+// --- Application-Specific Imports ---
+const connectDB = require('./config/db'); // Assumes a db connection utility
+const errorHandler = require('./middleware/errorHandler'); // Custom global error handler
+const AppError = require('./utils/appError'); // Custom error class
 
-// --- Import API Routes ---
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/users');
-const productRoutes = require('./routes/products');
-const orderRoutes = require('./routes/orders');
+// --- Route Imports ---
+// Centralizing route definitions for cleaner app setup
+const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
+const productRoutes = require('./routes/productRoutes');
+const orderRoutes = require('./routes/orderRoutes');
 const vendorRoutes = require('./routes/vendors');
-const cartRoutes = require('./routes/cart');
-const paymentRoutes = require('./routes/payment');
 
-// --- Initialize Express App ---
-const app = express();
+// --- Initial Configuration ---
+// Load environment variables from .env file into process.env
+dotenv.config({ path: './.env' });
 
 // --- Database Connection ---
-const MONGO_URI = process.env.MONGO_URI;
+// Establish connection to the MongoDB database
+connectDB();
 
-if (!MONGO_URI) {
-    console.error('FATAL ERROR: MONGO_URI is not defined in the environment variables.');
-    process.exit(1);
-}
+// --- Express App Initialization ---
+const app = express();
 
-mongoose.connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-})
-.then(() => console.log('Successfully connected to MongoDB.'))
-.catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1); // Exit process with failure
-});
+// --- Global Middleware Setup ---
 
-// --- Core Middleware Setup ---
-
-// Set security-related HTTP headers
+// 1. Security HTTP Headers
+// Sets various HTTP headers to help secure the app (e.g., X-XSS-Protection, Strict-Transport-Security)
 app.use(helmet());
 
-// Configure CORS to allow requests from the frontend client
+// 2. Cross-Origin Resource Sharing (CORS)
+// Enables controlled access to resources from different origins.
+// In production, this should be strictly configured to the frontend's domain.
 const corsOptions = {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true, // Allow cookies to be sent
-    optionsSuccessStatus: 204
+  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  credentials: true, // Important for sending cookies/session info
 };
 app.use(cors(corsOptions));
 
-// HTTP request logger middleware
-// Use 'dev' format for development and 'combined' for production for more detailed logs
-const morganFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
-app.use(morgan(morganFormat));
+// 3. API Rate Limiting
+// Protects against brute-force and denial-of-service attacks.
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Limit each IP to 200 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests from this IP, please try again after 15 minutes.',
+});
+app.use('/api', limiter); // Apply the rate limiting middleware to all API routes
 
-// Body parsing middleware
-app.use(express.json({ limit: '10kb' })); // for parsing application/json
-app.use(express.urlencoded({ extended: true, limit: '10kb' })); // for parsing application/x-www-form-urlencoded
+// 4. Body Parsers
+// Parses incoming request bodies, making them available under `req.body`.
+app.use(express.json({ limit: '15kb' })); // Limit JSON payload size
+app.use(express.urlencoded({ extended: true, limit: '15kb' }));
 
-// Apply rate limiting to all API requests to prevent abuse
-app.use('/api/', rateLimiter);
+// 5. Cookie Parser
+// Parses Cookie header and populates req.cookies with an object keyed by the cookie names.
+app.use(cookieParser());
 
-// Serve static files (e.g., product images) from the 'uploads' directory
+// 6. Data Sanitization
+// Protects against NoSQL query injection and XSS attacks.
+app.use(xss()); // Sanitize against XSS
+
+// 7. HTTP Parameter Pollution (HPP) Protection
+// Prevents attackers from overriding parameters.
+app.use(
+  hpp({
+    whitelist: [
+      // Add parameters that are allowed to appear multiple times in the query string
+      'price',
+      'ratingsAverage',
+      'category',
+      'brand',
+      'sort',
+    ],
+  })
+);
+
+// 8. HTTP Request Logging
+// Logs request details to the console during development for easier debugging.
+if (process.env.NODE_ENV === 'development') {
+  app.use(require('morgan')('dev'));
+}
+
+// --- Static File Serving ---
+// Serves static files like product images from the 'uploads' directory.
+// In a production environment, it's highly recommended to use a cloud storage service (e.g., AWS S3).
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-
 // --- API Routes ---
-const API_PREFIX = '/api/v1';
+const API_BASE_PATH = '/api/v1';
 
-// A simple root route for basic API information
-app.get('/', (req, res) => {
-    res.json({
-        message: 'Welcome to the Multi-vendor E-commerce Marketplace API!',
-        version: '1.0.0',
-        documentation: '/api-docs' // Placeholder for future API docs
-    });
+// Health check endpoint for monitoring and uptime checks
+app.get(`${API_BASE_PATH}/health`, (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'API is healthy and running.',
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Health check endpoint for monitoring services
-app.get(`${API_PREFIX}/health`, (req, res) => {
-    res.status(200).json({
-        status: 'UP',
-        timestamp: new Date().toISOString(),
-        dbState: mongoose.STATES[mongoose.connection.readyState]
-    });
-});
-
-// Mount the application's routers
-app.use(`${API_PREFIX}/auth`, authRoutes);
-app.use(`${API_PREFIX}/users`, userRoutes);
-app.use(`${API_PREFIX}/products`, productRoutes);
-app.use(`${API_PREFIX}/orders`, orderRoutes);
-app.use(`${API_PREFIX}/vendors`, vendorRoutes);
-app.use(`${API_PREFIX}/cart`, cartRoutes);
-app.use(`${API_PREFIX}/payment`, paymentRoutes);
-
+// Mount the imported route handlers
+app.use(`${API_BASE_PATH}/auth`, authRoutes);
+app.use(`${API_BASE_PATH}/users`, userRoutes);
+app.use(`${API_BASE_PATH}/products`, productRoutes);
+app.use(`${API_BASE_PATH}/orders`, orderRoutes);
+app.use(`${API_BASE_PATH}/vendors`, vendorRoutes);
 
 // --- Error Handling Middleware ---
-// These must be the last middleware added to the app.
 
-// Handle requests to routes that do not exist
-app.use(notFoundHandler);
+// 1. Handle 404 Not Found errors for unhandled routes
+// This middleware is triggered if no other route matches the request.
+app.all('*', (req, res, next) => {
+  next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
+});
 
-// Global error handler to catch all errors passed by next()
+// 2. Global Error Handler
+// Catches all errors passed by `next(err)` from any part of the application.
+// Provides a consistent error response format.
 app.use(errorHandler);
 
-
-// --- Server Initialization ---
-const PORT = process.env.PORT || 5000;
-
-const server = app.listen(PORT, () => {
-    console.log(`Server is running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-});
-
-// --- Graceful Shutdown ---
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-    console.error('UNHANDLED REJECTION! 💥 Shutting down...');
-    console.error(err.name, err.message);
-    server.close(() => {
-        process.exit(1);
-    });
-});
-
-// Handle SIGTERM signal (e.g., from Docker or cloud services)
-process.on('SIGTERM', () => {
-    console.info('SIGTERM signal received: closing HTTP server gracefully.');
-    server.close(() => {
-        console.log('HTTP server closed.');
-        mongoose.connection.close(false, () => {
-            console.log('MongoDB connection closed.');
-            process.exit(0);
-        });
-    });
-});
-
-// Export the app for integration testing
+// --- Export the Express App ---
+// Exporting the app object allows the server startup logic (in server.js)
+// to be separated, which is a best practice for testing and maintainability.
 module.exports = app;
 ```
